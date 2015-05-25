@@ -8,3 +8,4 @@
 * [crawler_tutorial.ipynb](http://nbviewer.ipython.org/github/mythnc/python-crawler-tutorial/blob/master/crawler_tutorial.ipynb) - crawler tutorial material
 * pretty.jpg - demo material
 
+You also can find this at github ([link](https://github.com/mythnc/python-crawler-tutorial))
