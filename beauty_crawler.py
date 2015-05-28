@@ -3,11 +3,11 @@
 
 from __future__ import print_function
 import datetime
-import random
+import sys
 import requests
 import lxml
 from pyquery import PyQuery as pq
-from pymongo import MongoClient, DESCENDING
+from pymongo import MongoClient
 
 
 mongo_client = MongoClient()
@@ -15,19 +15,22 @@ ptt_db = mongo_client.beauty_board_db
 article_col = ptt_db.beauty_article_col
 beauty_url = "http://www.ptt.cc/bbs/Beauty/index.html"
 
-conditions = {}
-
 
 def get_requests_data(url):
+    error_503 = '503 Service Temporarily Unavailable'
     while True:
         try:
             r = requests.get(url)
             s = pq(r.text)
-            if '503' in s('title').text():
-                continue
+            if error_503 in s('title').text():
+                print('503 error right now')
+                sys.exit(1)
             return s
         except lxml.etree.XMLSyntaxError:
-            pass
+            print('XMLSyntaxError')
+        except requests.exceptions.ConnectionError:
+            print('ConnectionError')
+            continue
 
 
 def get_article_metadata_lists(one_ptt_url):
@@ -81,7 +84,7 @@ def get_all_pages_url(ptt_index_url):
     """
     max_page = get_max_pages(ptt_index_url)
     url_head = ptt_index_url.split('index')[0]
-    all_urls = ["{}index{}.html".format(url_head, i) for i in range(max_page)]
+    all_urls = ["{}index{}.html".format(url_head, i) for i in range(1, max_page)]
     all_urls.append(ptt_index_url)
     return all_urls
 
@@ -123,7 +126,6 @@ def get_article_data(article_url):
 
 
 def trans_article_date_format(article_date):
-    print(article_date)
     trans_month_format = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4,
                           'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8,
                           'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
@@ -178,76 +180,26 @@ def get_picmoe_img(pic_urls, url):
     pic_urls.append(pic)
 
 
-def query(conditions=conditions):
-    push_number = conditions['push_number']
-    keyword = conditions['keyword']
-    post_number = conditions['post_number']
-
-    if keyword:
-        nodes = list(article_col.find({'title': {'$regex': keyword}})
-                     .sort('date', DESCENDING).limit(post_number))
-        for node in nodes:
-            i = random.randint(0, len(node['pic'])-1)
-            node['pic'] = node['pic'][i]
-        return nodes
-
-    if push_number:
-        result = article_col.find({'push': {'$gte': push_number}}).\
-            sort('date', DESCENDING)
-    else:
-        result = article_col.find().sort('date', DESCENDING)
-
-    if post_number:
-        result = result.limit(post_number)
-
-    nodes = list(result)
-    for node in nodes:
-        i = random.randint(0, len(node['pic'])-1)
-        node['pic'] = node['pic'][i]
-    return nodes
-
-
-def gen_html(nodes):
-    print('<!DOCTYPE HTML>')
-    print('<head><meta charset="UTF-8"></head>')
-    print('<body>')
-    for node in nodes:
-        print('<a href="{url}" target="_blank">原始文章</a>'.format(**node))
-        print('<br>')
-        print('<img src="{pic}" alt="" height="" width="">'.format(**node))
-        print('<br>')
-        print('<br>')
-    print('</body>')
-
-
-def set_condition(push_number=None, keyword=None, post_number=100):
-    conditions['push_number'] = push_number
-    conditions['keyword'] = keyword  # unicode problem u'xxxx'
-    conditions['post_number'] = post_number
-
-
 def save_all_articles_to_db(limit=None, update=False):
     all_page_urls = get_all_pages_url(beauty_url)
+
     if limit:
         all_page_urls = all_page_urls[:limit+1]
     elif update:
         all_page_urls = all_page_urls[-35:]
+
     for page_url in reversed(all_page_urls):
-        print(page_url)
+        print('\n...Crawler into ' + page_url.split('/')[-1] + '...\n')
         article_metadata = get_article_metadata_lists(page_url)
         for metadata in article_metadata:
+            print(metadata['title'])
             article_data = get_article_data(metadata['url'])
             if article_data:
                 article_data.update(metadata)
-                print(article_data['url'])
+                print('This article has images\n')
                 article_col.update({'url': article_data['url']},
                                    article_data, upsert=True)
 
 
-set_condition()
-
 if __name__ == '__main__':
-    # requests.packages.urllib3.disable_warnings()
     save_all_articles_to_db(update=True)
-    # nodes = query()
-    # gen_html(nodes)
